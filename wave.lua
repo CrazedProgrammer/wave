@@ -1,5 +1,5 @@
 --[[
-wave version 0.1.0
+wave version 0.1.1
 
 The MIT License (MIT)
 Copyright (c) 2016 CrazedProgrammer
@@ -22,7 +22,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ]]
 
 local wave = { }
-wave.version = "0.1.0"
+wave.version = "0.1.1"
 
 wave._soundMap = {"harp", "bassattack", "bd", "snare", "hat"}
 wave._newSoundMap = {"harp", "bass", "basedrum", "snare", "hat"}
@@ -43,6 +43,7 @@ function wave.createContext(clock, volume)
 	local context = setmetatable({ }, {__index = wave.context})
 	context.outputs = { }
 	context.instances = { }
+	context.vs = {0, 0, 0, 0, 0}
 	context.prevClock = clock or os.clock()
 	context.volume = volume or 1.0
 	return context
@@ -60,11 +61,13 @@ end
 function wave.context:removeOutput(out)
 	if type(out) == "number" then
 		table.remove(self.outputs, out)
+		return
 	elseif type(out) == "table" then
 		if getmetatable(out).__index == wave.output then
 			for i = 1, #self.outputs do
 				if out == self.outputs[i] then
 					table.remove(self.outputs, i)
+					return
 				end
 			end
 			return
@@ -73,6 +76,7 @@ function wave.context:removeOutput(out)
 	for i = 1, #self.outputs do
 		if out == self.outputs[i].native then
 			table.remove(self.outputs, i)
+			return
 		end
 	end
 end
@@ -85,10 +89,19 @@ end
 
 function wave.context:removeInstance(instance)
 	if type(instance) == "number" then
+		table.remove(self.instances, instance)
+	else
+		for i = 1, #self.instances do
+			if self.instances == instance then
+				table.remove(self.instances, i)
+				return
+			end
+		end
 	end
 end
 
 function wave.context:playNote(note, pitch, volume)
+	self.vs[note] = self.vs[note] + volume
 	for i = 1, #self.outputs do
 		self.outputs[i]:playNote(note, pitch, volume * self.volume)
 	end
@@ -103,9 +116,11 @@ function wave.context:update(clock)
 	elseif dt > wave._maxInterval then
 		dt = wave._maxInterval
 	end
-	print(dt)
 	for i = 1, #self.outputs do
 		self.outputs[i].notes = 0
+	end
+	for i = 1, 5 do
+		self.vs[i] = 0
 	end
 	for i = 1, #self.instances do
 		local notes = self.instances[i]:update(dt)
@@ -249,8 +264,10 @@ function wave.loadTrack(path)
 			layer = layer + layerJumps
 			local instrument = readInt(1)
 			local key = readInt(1)
-			track.layers[layer].notes[tick * 2 - 1] = instrument + 1
-			track.layers[layer].notes[tick * 2] = key - 33
+			if instrument >= 0 and instrument <= 4 then -- no custom nbs sound support because it doesnt make sense
+				track.layers[layer].notes[tick * 2 - 1] = instrument + 1
+				track.layers[layer].notes[tick * 2] = key - 33
+			end
 		end
 	end
 
@@ -292,7 +309,6 @@ function wave.instance:update(dt)
 		local istarttick = math.ceil(starttick)
 		local iendtick = math.ceil(endtick) - 1
 		for i = istarttick, iendtick do
-			-- fuck my life
 			for j = 1, self.track.height do
 				if self.track.layers[j].notes[i * 2 - 1] then
 					notes[#notes + 1] = self.track.layers[j].notes[i * 2 - 1]
