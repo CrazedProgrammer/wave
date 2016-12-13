@@ -1,5 +1,5 @@
 --[[
-wave version 0.1.1
+wave version 0.1.2
 
 The MIT License (MIT)
 Copyright (c) 2016 CrazedProgrammer
@@ -22,7 +22,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ]]
 
 local wave = { }
-wave.version = "0.1.1"
+wave.version = "0.1.2"
 
 wave._soundMap = {"harp", "bassattack", "bd", "snare", "hat"}
 wave._newSoundMap = {"harp", "bass", "basedrum", "snare", "hat"}
@@ -51,11 +51,24 @@ end
 
 function wave.context:addOutput(...)
 	local output = wave.createOutput(...)
-	if not output then
-		error("invalid output")
-	end
 	self.outputs[#self.outputs + 1] = output
 	return output
+end
+
+function wave.context:addOutputs(...)
+	local outs = {...}
+	if #outs == 1 then
+		if not getmetatable(outs) then
+			outs = outs[1]
+		else
+			if getmetatable(outs).__index ~= wave.outputs then
+				outs = outs[1]
+			end
+		end
+	end
+	for i = 1, #outs do
+		self:addOutput(outs[i])
+	end
 end
 
 function wave.context:removeOutput(out)
@@ -107,14 +120,12 @@ function wave.context:playNote(note, pitch, volume)
 	end
 end
 
-function wave.context:update(clock)
-	clock = clock or os.clock()
-	local dt = clock - self.prevClock
+function wave.context:update(interval)
+	local clock = os.clock()
+	interval = interval or (clock - self.prevClock)
 	self.prevClock = clock
-	if dt <= 0 then
-		return
-	elseif dt > wave._maxInterval then
-		dt = wave._maxInterval
+	if interval > wave._maxInterval then
+		interval = wave._maxInterval
 	end
 	for i = 1, #self.outputs do
 		self.outputs[i].notes = 0
@@ -122,10 +133,12 @@ function wave.context:update(clock)
 	for i = 1, 5 do
 		self.vs[i] = 0
 	end
-	for i = 1, #self.instances do
-		local notes = self.instances[i]:update(dt)
-		for j = 1, #notes / 3 do
-			self:playNote(notes[j * 3 - 2], notes[j * 3 - 1], notes[j * 3])
+	if interval > 0 then
+		for i = 1, #self.instances do
+			local notes = self.instances[i]:update(interval)
+			for j = 1, #notes / 3 do
+				self:playNote(notes[j * 3 - 2], notes[j * 3 - 1], notes[j * 3])
+			end
 		end
 	end
 end
@@ -174,6 +187,20 @@ function wave.createOutput(out, volume, filter, throttle, clipMode)
 			end
 		end
 	end
+end
+
+function wave.scanOutputs()
+	local outs = { }
+	if commands then
+		outs[#outs + 1] = wave.createOutput(commands)
+	end
+	local sides = peripheral.getNames()
+	for i = 1, #sides do
+		if peripheral.getType(sides[i]) == "iron_noteblock" then
+			outs[#outs + 1] = wave.createOutput(sides[i])
+		end
+	end
+	return outs
 end
 
 function wave.output:playNote(note, pitch, volume)
@@ -264,7 +291,7 @@ function wave.loadTrack(path)
 			layer = layer + layerJumps
 			local instrument = readInt(1)
 			local key = readInt(1)
-			if instrument >= 0 and instrument <= 4 then -- no custom nbs sound support because it doesnt make sense
+			if instrument <= 4 then -- nbs can be buggy
 				track.layers[layer].notes[tick * 2 - 1] = instrument + 1
 				track.layers[layer].notes[tick * 2] = key - 33
 			end
@@ -300,10 +327,10 @@ function wave.createInstance(track, volume, playing, loop)
 	return instance
 end 
 
-function wave.instance:update(dt)
+function wave.instance:update(interval)
 	local notes = { }
 	if self.playing then
-		local dticks = dt * self.track.tempo
+		local dticks = interval * self.track.tempo
 		local starttick = self.tick
 		local endtick = starttick + dticks
 		local istarttick = math.ceil(starttick)
