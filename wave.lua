@@ -1,5 +1,5 @@
 --[[
-wave version 0.1.3
+wave version 0.1.4
 
 The MIT License (MIT)
 Copyright (c) 2016 CrazedProgrammer
@@ -22,7 +22,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ]]
 
 local wave = { }
-wave.version = "0.1.3"
+wave.version = "0.1.4"
 
 wave._oldSoundMap = {"harp", "bassattack", "bd", "snare", "hat"}
 wave._newSoundMap = {"harp", "bass", "basedrum", "snare", "hat"}
@@ -31,7 +31,7 @@ wave._defaultClipMode = 1
 wave._maxInterval = 1
 wave._isNewSystem = false
 if _HOST then
-	wave._isNewSystem = tonumber(_HOST:sub(17, 17)) >= 8
+	wave._isNewSystem = _HOST:sub(15, #_HOST) >= "1.80"
 end
 
 wave.context = { }
@@ -40,12 +40,15 @@ wave.track = { }
 wave.instance = { }
 
 function wave.createContext(clock, volume)
+	clock = clock or os.clock()
+	volume = volume or 1.0
+
 	local context = setmetatable({ }, {__index = wave.context})
 	context.outputs = { }
 	context.instances = { }
 	context.vs = {0, 0, 0, 0, 0}
-	context.prevClock = clock or os.clock()
-	context.volume = volume or 1.0
+	context.prevClock = clock
+	context.volume = volume
 	return context
 end
 
@@ -114,6 +117,8 @@ function wave.context:removeInstance(instance)
 end
 
 function wave.context:playNote(note, pitch, volume)
+	volume = volume or 1.0
+
 	self.vs[note] = self.vs[note] + volume
 	for i = 1, #self.outputs do
 		self.outputs[i]:playNote(note, pitch, volume * self.volume)
@@ -123,6 +128,7 @@ end
 function wave.context:update(interval)
 	local clock = os.clock()
 	interval = interval or (clock - self.prevClock)
+
 	self.prevClock = clock
 	if interval > wave._maxInterval then
 		interval = wave._maxInterval
@@ -146,13 +152,18 @@ end
 
 
 function wave.createOutput(out, volume, filter, throttle, clipMode)
+	volume = volume or 1.0
+	filter = filter or {true, true, true, true, true}
+	throttle = throttle or wave._defaultThrottle
+	clipMode = clipMode or wave._defaultClipMode
+
 	local output = setmetatable({ }, {__index = wave.output})
 	output.native = out
-	output.volume = volume or 1.0
-	output.filter = filter or {true, true, true, true, true}
+	output.volume = volume
+	output.filter = filter
 	output.notes = 0
-	output.throttle = throttle or wave._defaultThrottle
-	output.clipMode = clipMode or wave._defaultClipMode
+	output.throttle = throttle
+	output.clipMode = clipMode
 	if type(out) == "function" then
 		output.nativePlayNote = out
 		output.type = "custom"
@@ -207,6 +218,7 @@ end
 
 function wave.output:playNote(note, pitch, volume)
 	volume = volume or 1.0
+
 	if self.clipMode == 1 then
 		if pitch < 0 then
 			pitch = 0
@@ -241,7 +253,10 @@ function wave.loadTrack(path)
 		local num = 0
 		for i = 0, size - 1 do
 			local byte = handle.read()
-			if not byte then return end
+			if not byte then -- dont leave open file handles no matter what
+				handle.close()
+				return
+			end
 			num = num + byte * (256 ^ i)
 		end
 		return num
@@ -291,6 +306,13 @@ function wave.loadTrack(path)
 			local layerJumps = readInt(2)
 			if layerJumps == 0 then break end
 			layer = layer + layerJumps
+			if layer > track.height then -- nbs can be buggy
+				for i = track.height + 1, layer do
+					track.layers[i] = {name = "Layer "..i, volume = 1.0}
+					track.layers[i].notes = { }
+				end
+				track.height = layer
+			end
 			local instrument = readInt(1)
 			local key = readInt(1)
 			if instrument <= 4 then -- nbs can be buggy
@@ -315,6 +337,10 @@ end
 
 
 function wave.createInstance(track, volume, playing, loop)
+	volume = volume or 1.0
+	playing = (playing == nil) or playing
+	loop = (loop ~=  nil) and loop
+
 	if getmetatable(track).__index == wave.instance then
 		return track
 	end
@@ -322,9 +348,7 @@ function wave.createInstance(track, volume, playing, loop)
 	instance.track = track
 	instance.volume = volume or 1.0
 	instance.playing = playing
-	if playing == nil then instance.playing = true end
 	instance.loop = loop
-	if loop == nil then instance.loop = false end
 	instance.tick = 1
 	return instance
 end 
