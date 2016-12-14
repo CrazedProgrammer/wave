@@ -1,5 +1,5 @@
 --[[
-wave version 0.1.2
+wave version 0.1.3
 
 The MIT License (MIT)
 Copyright (c) 2016 CrazedProgrammer
@@ -22,9 +22,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ]]
 
 local wave = { }
-wave.version = "0.1.2"
+wave.version = "0.1.3"
 
-wave._soundMap = {"harp", "bassattack", "bd", "snare", "hat"}
+wave._oldSoundMap = {"harp", "bassattack", "bd", "snare", "hat"}
 wave._newSoundMap = {"harp", "bass", "basedrum", "snare", "hat"}
 wave._defaultThrottle = 99
 wave._defaultClipMode = 1
@@ -172,15 +172,17 @@ function wave.createOutput(out, volume, filter, throttle, clipMode)
 		end
 	elseif type(out) == "table" then
 		if out.execAsync then
+			output.type = "commands"
 			if wave._isNewSystem then
-				output.type = "commands"
 				function output.nativePlayNote(note, pitch, volume)
 					out.execAsync("playsound minecraft:block.note."..wave._newSoundMap[note].." record @a ~ ~ ~ "..tostring(volume).." "..tostring(math.pow(2, (pitch - 12) / 12)))
 				end
-				return output
 			else
-				-- todo
+				function output.nativePlayNote(note, pitch, volume)
+					out.execAsync("playsound note."..wave._oldSoundMap[note].." @a ~ ~ ~ "..tostring(volume).." "..tostring(math.pow(2, (pitch - 12) / 12)))
+				end
 			end
+			return output
 		elseif getmetatable(out) then
 			if getmetatable(out).__index == wave.output then
 				return out
