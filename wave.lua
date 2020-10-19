@@ -1,8 +1,8 @@
 --[[
-wave version 0.1.4
+wave version 0.1.5
 
 The MIT License (MIT)
-Copyright (c) 2016 CrazedProgrammer
+Copyright (c) 2020 CrazedProgrammer
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -22,7 +22,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ]]
 
 local wave = { }
-wave.version = "0.1.4"
+wave.version = "0.1.5"
 
 wave._oldSoundMap = {"harp", "bassattack", "bd", "snare", "hat"}
 wave._newSoundMap = {"harp", "bass", "basedrum", "snare", "hat"}
@@ -180,6 +180,17 @@ function wave.createOutput(out, volume, filter, throttle, clipMode)
 				end
 				return output
 			end
+		elseif peripheral.getType(out) == "speaker" then
+			if wave._isNewSystem then
+				local nb = peripheral.wrap(out)
+				output.type = "speaker"
+				function output.nativePlayNote(note, pitch, volume)
+					if output.volume * volume > 0 then
+						nb.playNote(wave._newSoundMap[note], volume, pitch)
+					end
+				end
+				return output
+			end
 		end
 	elseif type(out) == "table" then
 		if out.execAsync then
@@ -210,6 +221,8 @@ function wave.scanOutputs()
 	local sides = peripheral.getNames()
 	for i = 1, #sides do
 		if peripheral.getType(sides[i]) == "iron_noteblock" then
+			outs[#outs + 1] = wave.createOutput(sides[i])
+		elseif peripheral.getType(sides[i]) == "speaker" then
 			outs[#outs + 1] = wave.createOutput(sides[i])
 		end
 	end
