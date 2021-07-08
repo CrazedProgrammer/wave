@@ -1,8 +1,8 @@
 --[[
-wave version 0.1.5
+wave version 0.1.6
 
 The MIT License (MIT)
-Copyright (c) 2020 CrazedProgrammer
+Copyright (c) 2021 CrazedProgrammer
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -22,10 +22,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ]]
 
 local wave = { }
-wave.version = "0.1.5"
+wave.version = "0.1.6"
 
 wave._oldSoundMap = {"harp", "bassattack", "bd", "snare", "hat"}
-wave._newSoundMap = {"harp", "bass", "basedrum", "snare", "hat"}
+wave._newSoundMap = {"harp", "bass", "basedrum", "snare", "hat", "guitar", "flute", "bell", "chime", "xylophone", "iron_xylophone", "cow_bell", "didgeridoo", "bit", "banjo", "pling"}
 wave._defaultThrottle = 99
 wave._defaultClipMode = 1
 wave._maxInterval = 1
@@ -46,7 +46,7 @@ function wave.createContext(clock, volume)
 	local context = setmetatable({ }, {__index = wave.context})
 	context.outputs = { }
 	context.instances = { }
-	context.vs = {0, 0, 0, 0, 0}
+	context.vs = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	context.prevClock = clock
 	context.volume = volume
 	return context
@@ -136,7 +136,7 @@ function wave.context:update(interval)
 	for i = 1, #self.outputs do
 		self.outputs[i].notes = 0
 	end
-	for i = 1, 5 do
+	for i = 1, #wave._newSoundMap do
 		self.vs[i] = 0
 	end
 	if interval > 0 then
@@ -153,7 +153,7 @@ end
 
 function wave.createOutput(out, volume, filter, throttle, clipMode)
 	volume = volume or 1.0
-	filter = filter or {true, true, true, true, true}
+	filter = filter or {true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true}
 	throttle = throttle or wave._defaultThrottle
 	clipMode = clipMode or wave._defaultClipMode
 
@@ -286,21 +286,49 @@ function wave.loadTrack(path)
 
 	-- Part #1: Metadata
 	track.length = readInt(2) -- song length (ticks)
-	track.height = readInt(2) -- song height
-	track.name = readStr() -- song name
-	track.author = readStr() -- song author
-	track.originalAuthor = readStr() -- original song author
-	track.description = readStr() -- song description
-	track.tempo = readInt(2) / 100 -- tempo (ticks per second)
-	track.autoSaving = readInt(1) == 0 and true or false -- auto-saving
-	track.autoSavingDuration = readInt(1) -- auto-saving duration
-	track.timeSignature = readInt(1) -- time signature (3 = 3/4)
-	track.minutesSpent = readInt(4) -- minutes spent
-	track.leftClicks = readInt(4) -- left clicks
-	track.rightClicks = readInt(4) -- right clicks
-	track.blocksAdded = readInt(4) -- blocks added
-	track.blocksRemoved = readInt(4) -- blocks removed
-	track.schematicFileName = readStr() -- midi/schematic file name
+	if track.length == 0 then -- openNBS format
+		track.nbsVersion = readInt(1)
+		if track.nbsVersion == 4 or track.nbsVersion == 5 then -- TODO: support old openNBS formats
+			track.vanillaHeight = readInt(1) -- number of vanilla layers
+			track.length = readInt(2)
+			track.height = readInt(2) -- total number of layers (including custom instruments)
+			track.name = readStr()
+			track.author = readStr()
+			track.originalAuthor = readStr()
+			track.description = readStr()
+			track.tempo = readInt(2) / 100
+			track.autoSaving = readInt(1) == 0 and true or false
+			track.autoSavingDuration = readInt(1)
+			track.timeSignature = readInt(1)
+			track.minutesSpent = readInt(4)
+			track.leftClicks = readInt(4)
+			track.rightClicks = readInt(4)
+			track.blocksAdded = readInt(4)
+			track.blocksRemoved = readInt(4)
+			track.schematicFileName = readStr()
+			track.loop = readInt(1) -- whether or not the song should loop
+			track.loopCount = readInt(1) -- how many loops (0 for infinite)
+			track.loopStart = readInt(2) -- how far in does looping start
+		else
+			error("nbs version not supported")
+		end
+	else
+		track.height = readInt(2) -- song height
+		track.name = readStr() -- song name
+		track.author = readStr() -- song author
+		track.originalAuthor = readStr() -- original song author
+		track.description = readStr() -- song description
+		track.tempo = readInt(2) / 100 -- tempo (ticks per second)
+		track.autoSaving = readInt(1) == 0 and true or false -- auto-saving
+		track.autoSavingDuration = readInt(1) -- auto-saving duration
+		track.timeSignature = readInt(1) -- time signature (3 = 3/4)
+		track.minutesSpent = readInt(4) -- minutes spent
+		track.leftClicks = readInt(4) -- left clicks
+		track.rightClicks = readInt(4) -- right clicks
+		track.blocksAdded = readInt(4) -- blocks added
+		track.blocksRemoved = readInt(4) -- blocks removed
+		track.schematicFileName = readStr() -- midi/schematic file name
+	end
 
 	-- Part #2: Notes
 	track.layers = { }
@@ -326,9 +354,15 @@ function wave.loadTrack(path)
 				end
 				track.height = layer
 			end
+			
 			local instrument = readInt(1)
 			local key = readInt(1)
-			if instrument <= 4 then -- nbs can be buggy
+			if track.nbsVersion == 4 or track.nbsVersion == 5 then
+				local velocity = readInt(1)
+				local panning = readInt(1)
+				local pitch = readInt(2)
+			end
+			if instrument <= #wave._newSoundMap then -- nbs can be buggy
 				track.layers[layer].notes[tick * 2 - 1] = instrument + 1
 				track.layers[layer].notes[tick * 2] = key - 33
 			end
@@ -339,8 +373,16 @@ function wave.loadTrack(path)
 	for i = 1, track.height do
 		local name = readStr()
 		if not name then break end -- if layer data doesnt exist, abort
-		track.layers[i].name = name
-		track.layers[i].volume = readInt(1) / 100
+		if track.nbsVersion == 4 or track.nbsVersion == 5 then
+			local locked = readInt(1) == 0 and true or false
+			local volume = readInt(1)
+			local panning = readInt(1)
+			track.layers[i].name = name
+			track.layers[i].volume = volume / 100
+		else
+			track.layers[i].name = name
+			track.layers[i].volume = readInt(1) / 100			
+		end
 	end
 
 	handle.close()
